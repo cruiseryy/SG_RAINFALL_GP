@@ -117,28 +117,47 @@ class gp:
         yy = yy[:, :idx]
 
         fig, ax = plt.subplots(nrows = 1, ncols = 3, figsize=[24,7], subplot_kw={'projection': crs.PlateCarree()})
-        self.map_plotter(ax[0], data = np.mean(self.rain_wrf, axis=0), show_sta = 1)
-        self.map_plotter(ax[1], data = np.mean(fyy, axis=0), show_sta = 1)
+        tmphigh = np.max([np.mean(self.rain_wrf, axis=0), np.mean(fyy, axis=0)])
+        self.map_plotter(ax[0], data = np.mean(self.rain_wrf, axis=0), show_sta = 1, color_high = -1)
+        ax[0].set_title('(a)')
+        self.map_plotter(ax[1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
+        ax[1].set_title('(b)')
         self.map_plotter(ax[2], data = np.sqrt(ycov), show_sta = 1)
+        ax[2].set_title('(c)')
         plt.tight_layout()
-        plt.savefig('comp.pdf')
+        plt.savefig('comp_shrink.pdf')
         pause = 1
 
         return
-    
-    def map_plotter(self, ax, data, show_sta = 0):
+    # def slice_(self, data, buffer = 5):
+    #     data_del = np.delete(data, np.s_[0:buffer], axis = 0)
+    #     data_del = np.delete(data_del, np.s_[-3*buffer:], axis = 0)
+    #     data_del = np.delete(data_del, np.s_[0:2*buffer], axis = 1)
+    #     data_del = np.delete(data_del, np.s_[-buffer:], axis = 1)
+    #     return data_del
+
+    def map_plotter(self, ax, data, show_sta = 0, color_high = -1):
         self.coastline.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=1)
-        basemap = ax.contourf(self.lon, self.lat, data, transform=crs.PlateCarree(), cmap="jet")
+        # tmplon = self.slice_(self.lon, buffer = 10)
+        # tmplat = self.slice_(self.lat, buffer = 10)
+        # tmpdata = self.slice_(data, buffer = 10)
+        if color_high != -1: 
+            data[0,0] = color_high
+        basemap = ax.contourf(self.lon, self.lat, data, levels=20, transform=crs.PlateCarree(), cmap="jet")
+        for c in basemap.collections:
+            c.set_edgecolor("face")
         if show_sta:
             sta_map = ax.scatter(self.wrf_loc[:,0], self.wrf_loc[:,1], s = 50, facecolors='k', marker='D')
-        ax.set_extent([np.min(self.lon), np.max(self.lon), np.min(self.lat), np.max(self.lat)], crs=crs.PlateCarree())
+        ax.set_extent([103.58, 104.12, 1.153, 1.502], crs=crs.PlateCarree())
         cbar = plt.colorbar(basemap, ax=ax, orientation='vertical', shrink=.5)
         cbar.set_label('Rainfall [mm]')
+        # cbar.mappable.set_clim(vmin=0, vmax=600) 
         gl = ax.gridlines(crs=crs.PlateCarree(), draw_labels=True, linewidth=1.5, color='gray', alpha=0.5, linestyle='--')
         gl.top_labels = False
         gl.right_labels = False
-        gl.xlocator = mticker.FixedLocator([103.5, 103.7, 103.9, 104.1])
-        gl.ylocator = mticker.FixedLocator([1.1, 1.3, 1.5])
+        gl.xlocator = mticker.FixedLocator([103.5, 103.6, 103.7, 103.8, 103.9, 104.0, 104.1])
+        gl.ylocator = mticker.FixedLocator([1.1, 1.2, 1.3, 1.4, 1.5])
+        # ax.set_title(tit)
         pause = 1
         return
 
