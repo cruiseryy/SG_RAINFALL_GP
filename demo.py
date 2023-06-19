@@ -7,6 +7,7 @@ import geopandas as gpd
 import cartopy.crs as crs
 from cartopy.feature import NaturalEarthFeature
 import cartopy.io.shapereader as shpreader
+import matplotlib.ticker as mticker
 
 
 class gp:
@@ -52,7 +53,13 @@ class gp:
 
         return
     
-    def validation(self, xx, yy):
+    def gp_fit(self, fxx, mu_fx, kxy, kxx, mu_fy, kyy):
+        tmpy = kxy @ np.linalg.inv(kxx) @ (fxx - mu_fx).T
+        tmpy += mu_fy
+        cov_y = kyy - kxy @ np.linalg.inv(kxx) @ kxy.T
+        return tmpy.squeeze(), cov_y
+    
+    def validation(self):
         xx = self.wrf_sta[0::12, :] + self.wrf_sta[1::12, :]
         yy = self.rain_sta[0::12, :] + self.rain_sta[1::12, :]
         mu_x = np.mean(xx, axis = 0)
@@ -65,9 +72,8 @@ class gp:
             tyy = np.delete(yy, obj = j, axis = 1)
             kxx = np.cov(txx.T, ddof = 1)
             kxy = np.cov(xx[:,j].T, txx.T, ddof = 1)[:1, 1:]
-            y = kxy @ np.linalg.inv(kxx) @ (tyy - t_mu).T
-            y += mu_x[j]
-            y = y.squeeze()
+            kyy = np.cov(xx[:,j], ddof = 1)
+            y, _ = self.gp_fit(fxx = tyy, mu_fx = t_mu, kxx = kxx, kxy = kxy, mu_fy = mu_x[j], kyy = kyy)
             KGE = self.kge(true_ = yy[:, j], fit = y)
             KGE2 = self.kge(true_ = yy[:, j], fit = xx[:, j])
 
@@ -79,6 +85,45 @@ class gp:
     
     
     def uncertainty(self):
+        idx = 0
+        mp = np.zeros([2, 120*160])
+        yy = np.zeros([40, 120*160])
+        xx = self.wrf_sta[0::12, :] + self.wrf_sta[1::12, :]
+
+        ref = {(i, j):idx for idx, (i, j) in enumerate(self.wrf_idx)}
+        fyy = np.zeros([40, 120, 160])
+        ycov = np.zeros([120, 160])
+        mu_x = np.mean(xx, axis = 0)
+        fxx = self.rain_sta[0::12, :] + self.rain_sta[1::12, :]
+        kxx = np.cov(xx.T, ddof = 1)
+        # i could ve just deleted the ref columns in rain_wrf_f but life is short 
+        for i in range(120):
+            for j in range(160):
+                if (i, j) in ref: 
+                    fyy[:, i, j] = xx[:, ref[(i, j)]]
+                    continue
+                tyy = self.rain_wrf[0::12, i, j] + self.rain_wrf[1::12, i, j]
+                kxy = np.cov(tyy.T, xx.T, ddof = 1)[:1, 1:]
+                kyy = np.cov(tyy.T, ddof = 1)
+                mu_y = np.mean(tyy)
+                fit_y, fit_ycov = self.gp_fit(fxx = fxx, mu_fx = mu_x, kxx = kxx, kxy = kxy, mu_fy = mu_y, kyy = kyy)
+                fyy[:, i, j] = fit_y
+                ycov[i, j] = fit_ycov
+
+                yy[:, idx] = tyy 
+                mp[:, idx] = [i, j]
+                idx += 1
+        mp = mp[:, :idx].astype(int)
+        yy = yy[:, :idx]
+
+        fig, ax = plt.subplots(nrows = 1, ncols = 3, figsize=[24,7], subplot_kw={'projection': crs.PlateCarree()})
+        self.map_plotter(ax[0], data = np.mean(self.rain_wrf, axis=0), show_sta = 1)
+        self.map_plotter(ax[1], data = np.mean(fyy, axis=0), show_sta = 1)
+        self.map_plotter(ax[2], data = np.sqrt(ycov), show_sta = 1)
+        plt.tight_layout()
+        plt.savefig('comp.pdf')
+        pause = 1
+
         return
     
     def map_plotter(self, ax, data, show_sta = 0):
@@ -89,6 +134,11 @@ class gp:
         ax.set_extent([np.min(self.lon), np.max(self.lon), np.min(self.lat), np.max(self.lat)], crs=crs.PlateCarree())
         cbar = plt.colorbar(basemap, ax=ax, orientation='vertical', shrink=.5)
         cbar.set_label('Rainfall [mm]')
+        gl = ax.gridlines(crs=crs.PlateCarree(), draw_labels=True, linewidth=1.5, color='gray', alpha=0.5, linestyle='--')
+        gl.top_labels = False
+        gl.right_labels = False
+        gl.xlocator = mticker.FixedLocator([103.5, 103.7, 103.9, 104.1])
+        gl.ylocator = mticker.FixedLocator([1.1, 1.3, 1.5])
         pause = 1
         return
 
@@ -97,4 +147,5 @@ if __name__ == '__main__':
     tmp = gp()
     # fig, ax = plt.subplots(figsize=[20,15], subplot_kw={'projection': crs.PlateCarree()})
     # tmp.map_plotter(ax = ax, data = tmp.rain_wrf[0,:,:], show_sta = 1)
-    tmp.validation()
+    # tmp.validation()
+    tmp.uncertainty()
