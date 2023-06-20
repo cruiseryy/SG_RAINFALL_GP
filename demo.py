@@ -21,7 +21,7 @@ class gp:
                  geo = 'data/lonlat.txt'
                  ) -> None:
         
-        self.sn = 0.01 # obs noise level
+        self.sn = 50 # obs noise level
         
         self.rain_sta = np.loadtxt(sta)
         
@@ -51,12 +51,8 @@ class gp:
 
         return 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
     
-    def cov_est(self):
-
-        return
-    
     def gp_fit(self, fxx, mu_fx, kxy, kxx, mu_fy, kyy):
-
+        kxx = kxx + np.eye(kxx.shape[0]) * self.sn**2
         tmpy = kxy @ np.linalg.inv(kxx) @ (fxx - mu_fx).T
         tmpy += mu_fy
         cov_y = kyy - kxy @ np.linalg.inv(kxx) @ kxy.T
