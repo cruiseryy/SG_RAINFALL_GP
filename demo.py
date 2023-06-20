@@ -56,6 +56,7 @@ class gp:
         return
     
     def gp_fit(self, fxx, mu_fx, kxy, kxx, mu_fy, kyy):
+
         tmpy = kxy @ np.linalg.inv(kxx) @ (fxx - mu_fx).T
         tmpy += mu_fy
         cov_y = kyy - kxy @ np.linalg.inv(kxx) @ kxy.T
@@ -111,10 +112,11 @@ class gp:
 
         ref = {(i, j):idx for idx, (i, j) in enumerate(self.wrf_idx)}
         fyy = np.zeros([40, 120, 160])
-        ycov = np.zeros([120, 160])
+        yvar = np.zeros([120, 160])
         mu_x = np.mean(xx, axis = 0)
         fxx = self.rain_sta[0::12, :] + self.rain_sta[1::12, :]
         kxx = np.cov(xx.T, ddof = 1)
+        xvar = np.zeros([120, 160])
         # i could ve just deleted the ref columns in rain_wrf_f but life is short 
         for i in range(120):
             for j in range(160):
@@ -123,11 +125,14 @@ class gp:
                     continue
                 tyy = self.rain_wrf[0::12, i, j] + self.rain_wrf[1::12, i, j]
                 kxy = np.cov(tyy.T, xx.T, ddof = 1)[:1, 1:]
+                # if i == 60 and j == 80: 
+                #     pause = 1
                 kyy = np.cov(tyy.T, ddof = 1)
                 mu_y = np.mean(tyy)
-                fit_y, fit_ycov = self.gp_fit(fxx = fxx, mu_fx = mu_x, kxx = kxx, kxy = kxy, mu_fy = mu_y, kyy = kyy)
+                fit_y, fit_yvar = self.gp_fit(fxx = fxx, mu_fx = mu_x, kxx = kxx, kxy = kxy, mu_fy = mu_y, kyy = kyy)
                 fyy[:, i, j] = fit_y
-                ycov[i, j] = fit_ycov
+                yvar[i, j] = fit_yvar
+                xvar[i, j] = kyy
 
                 yy[:, idx] = tyy 
                 mp[:, idx] = [i, j]
@@ -137,17 +142,19 @@ class gp:
         yy = yy[:, :idx]
 
         self.rainfall_interp = fyy
-        self.rainfall_var = ycov
+        self.rainfall_var = yvar
 
         if plot == 1:
-            fig, ax = plt.subplots(nrows = 1, ncols = 3, figsize=[24,7], subplot_kw={'projection': crs.PlateCarree()})
-            tmphigh = np.max([np.mean(self.rain_wrf, axis=0), np.mean(fyy, axis=0)])
-            self.map_plotter(ax[0], data = np.mean(self.rain_wrf, axis=0), show_sta = 1, color_high = -1)
-            ax[0].set_title('(a)')
-            self.map_plotter(ax[1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
-            ax[1].set_title('(b)')
-            self.map_plotter(ax[2], data = np.sqrt(ycov), show_sta = 1)
-            ax[2].set_title('(c)')
+            fig, ax = plt.subplots(nrows = 2, ncols = 2, figsize=[16,10], subplot_kw={'projection': crs.PlateCarree()})
+            # tmphigh = np.max([np.mean(self.rain_wrf, axis=0), np.mean(fyy, axis=0)])
+            self.map_plotter(ax[0,0], data = np.mean(self.rain_wrf[0::12,:,:] + self.rain_wrf[1::12,:,:], axis=0), show_sta = 1, color_high = -1)
+            ax[0,0].set_title('(a) simulation')
+            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
+            ax[0,1].set_title('(b) interpolation')
+            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1)
+            ax[1,1].set_title('(d) 1 sigma intp')
+            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1)
+            ax[1,0].set_title('(c) 1 sigma sim')
             plt.tight_layout()
             plt.savefig('comp_new.pdf')
         pause = 1
@@ -175,7 +182,7 @@ class gp:
         if show_sta:
             sta_map = ax.scatter(self.wrf_loc[:,0], self.wrf_loc[:,1], s = 50, facecolors='k', marker='D')
         ax.set_extent([103.58, 104.12, 1.153, 1.502], crs=crs.PlateCarree())
-        cbar = plt.colorbar(basemap, ax=ax, orientation='vertical', shrink=1)
+        cbar = plt.colorbar(basemap, ax=ax, orientation='vertical', shrink=0.7)
         cbar.set_label('Rainfall [mm]')
         # cbar.mappable.set_clim(vmin=0, vmax=600) 
         gl = ax.gridlines(crs=crs.PlateCarree(), draw_labels=True, linewidth=1.5, color='gray', alpha=0.5, linestyle='--')
@@ -217,16 +224,15 @@ if __name__ == '__main__':
     
     pause = 1
     tmp = gp()
-    # tmp.validation()
-    # fig, ax = plt.subplots(figsize=[20,15], subplot_kw={'projection': crs.PlateCarree()})
-    # tmp.map_plotter(ax = ax, data = tmp.rain_wrf[0,:,:], show_sta = 1)
-    # tmp.validation()
-    tmp.interpolate()
+    fig, ax = plt.subplots(figsize=[20,15], subplot_kw={'projection': crs.PlateCarree ()})
+    tmp.map_plotter(ax = ax, data = tmp.rain_wrf[0,:,:], show_sta = 1)
+    tmp.validation()
+    tmp.interpolate(plot = 1)
     fig, ax = plt.subplots(figsize=(8, 6), nrows=2, ncols=2, height_ratios=[1, 4]) 
-    tmp.hovmoller_diagram(ax1 = ax[0,0], ax2 = ax[1,0], data = tmp.rainfall_interp)
-    ax[0,0].set_title('(a)')
-    tmp.hovmoller_diagram(ax1 = ax[0,1], ax2 = ax[1,1], data = tmp.rain_wrf[0::12, :, :] + tmp.rain_wrf[0::12, :, :])
-    ax[0,1].set_title('(b)')
+    tmp.hovmoller_diagram(ax1 = ax[0,1], ax2 = ax[1,1], data = tmp.rainfall_interp)
+    ax[0,1].set_title('(b) interpolation')
+    tmp.hovmoller_diagram(ax1 = ax[0,0], ax2 = ax[1,0], data = tmp.rain_wrf[0::12, :, :] + tmp.rain_wrf[1::12, :, :])
+    ax[0,0].set_title('(a) simulation')
     plt.tight_layout()
     fig.subplots_adjust(hspace=0)
     fig.savefig('hov_diag.pdf')
