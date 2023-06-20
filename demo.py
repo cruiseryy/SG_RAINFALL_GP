@@ -62,6 +62,11 @@ class gp:
         xx = self.wrf_sta[0::12, :] + self.wrf_sta[1::12, :]
         fxx = self.rain_sta[0::12, :] + self.rain_sta[1::12, :]
         mu_x = np.mean(xx, axis = 0)
+
+        # this chunk of codes is to check the predictions at training points
+        # kxx = np.cov(xx.T, ddof = 1)
+        # ftr, _ = self.gp_fit(fxx = fxx, mu_fx = mu_x, kxx = kxx, kxy = kxx, mu_fy = mu_x, kyy = kxx) 
+        # pause = 1
         # Kxx = np.cov(xx.T, ddof=1)
         
         fig, ax = plt.subplots(figsize=[20, 18], nrows = 4, ncols = 4)
