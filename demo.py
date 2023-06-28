@@ -23,10 +23,13 @@ class gp:
                  target_season = [1, 2]
                  ) -> None:
         
-        self.sn = 30 # initial noise level
+        
         self.ts = target_season
         
         self.rain_sta = np.loadtxt(sta)
+
+        # see Peng & Albertson 2021 but a vector of initial noise level is used here
+        self.sn = 30 * np.ones(self.rain_sta.shape[1]) # initial noise level
         
         self.rain_wrf_f = np.loadtxt(wrf)
         self.rain_wrf = self.rain_wrf_f.reshape(self.rain_wrf_f.shape[0], 120, 160)
@@ -53,11 +56,37 @@ class gp:
         return 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
     
     def gp_fit(self, fxx, mu_fx, kxy, kxx, mu_fy, kyy):
-        kxx = kxx + np.eye(kxx.shape[0]) * self.sn**2
+        # kxx = kxx + self.sn**2
         tmpy = kxy @ np.linalg.inv(kxx) @ (fxx - mu_fx).T
         tmpy += mu_fy
         cov_y = kyy - kxy @ np.linalg.inv(kxx) @ kxy.T
         return tmpy.squeeze(), cov_y
+    
+    def sn_converge(self):
+        xx = np.zeros([self.wrf_sta.shape[0]//12, self.wrf_sta.shape[1]])
+        fxx = np.zeros([self.rain_sta.shape[0]//12, self.rain_sta.shape[1]])
+        for i_ in self.ts:
+            xx += self.wrf_sta[(i_-1)::12, :]
+            fxx += self.rain_sta[(i_-1)::12, :]
+        mu_x = np.mean(xx, axis = 0)
+        sn0 = 9999 * np.ones(self.rain_sta.shape[1])
+        while np.mean((sn0 - self.sn)**2) / np.mean(self.sn**2) > 0.01:
+            sn0 = self.sn
+            tmp_err = []
+            for j in range(xx.shape[1]):
+                tsn = np.delete(self.sn, obj = j)
+                txx = np.delete(xx, obj = j, axis = 1)
+                t_mu = np.delete(mu_x, obj = j)
+                tfxx = np.delete(fxx, obj = j, axis = 1)
+                kxx = np.cov(txx.T, ddof = 1)
+                kxy = np.cov(xx[:,j].T, txx.T, ddof = 1)[:1, 1:]
+                kyy = np.cov(xx[:,j], ddof = 1)
+                fit_y, _ = self.gp_fit(fxx = tfxx, mu_fx = t_mu, kxx = kxx + np.diag(tsn**2), kxy = kxy, mu_fy = mu_x[j], kyy = kyy)
+                tmp_err.append(np.sqrt(np.mean((fxx[:, j] - fit_y) ** 2))) 
+            self.sn = np.array(tmp_err)
+            pause = 1
+        return
+
     
     def validation(self):
         xx = np.zeros([self.wrf_sta.shape[0]//12, self.wrf_sta.shape[1]])
@@ -78,20 +107,21 @@ class gp:
         fig, ax = plt.subplots(figsize = [20, 18], nrows = 4, ncols = 4)
         # the usage of y kinda confusing here
         f_est = np.zeros(fxx.shape)
-        
-        err = 0
-
+        score_kge = []
+        score_cc = []
         for j in range(xx.shape[1]):
             txx = np.delete(xx, obj = j, axis = 1)
+            tsn = np.delete(self.sn, obj = j)
             t_mu = np.delete(mu_x, obj = j)
             tfxx = np.delete(fxx, obj = j, axis = 1)
             kxx = np.cov(txx.T, ddof = 1)
             kxy = np.cov(xx[:,j].T, txx.T, ddof = 1)[:1, 1:]
             kyy = np.cov(xx[:,j], ddof = 1)
-            fit_y, _ = self.gp_fit(fxx = tfxx, mu_fx = t_mu, kxx = kxx, kxy = kxy, mu_fy = mu_x[j], kyy = kyy)
+            fit_y, _ = self.gp_fit(fxx = tfxx, mu_fx = t_mu, kxx = kxx + np.diag(tsn**2), kxy = kxy, mu_fy = mu_x[j], kyy = kyy)
             KGE = self.kge(true_ = fxx[:, j], fit = fit_y)
             KGE2 = self.kge(true_ = fxx[:, j], fit = xx[:, j])
-            err += 1/xx.shape[1] * (np.sqrt(np.mean((fxx[:, j] - fit_y) ** 2)))
+            score_cc.append([np.corrcoef(fit_y, fxx[:,j])[0, 1], np.corrcoef(xx[:, j], fxx[:,j])[0, 1]])
+            score_kge.append([KGE, KGE2])
 
             print('the corrcoef for station {} is {:.2f} ({:.2f}), the KGE is {:.2f} ({:.2f})'.format(j, np.corrcoef(fit_y, fxx[:,j])[0, 1], np.corrcoef(xx[:, j], fxx[:,j])[0, 1], KGE, KGE2))
 
@@ -111,9 +141,8 @@ class gp:
         ax[3][3].axis('off')
         plt.tight_layout()
         fig.savefig('validation' + str(self.ts[0]) + '.pdf')
-        self.sn = err
         pause = 1
-        return
+        return np.array(score_kge), np.array(score_cc)
     
     
     def interpolate(self, plot = 0, write_ = 0):
@@ -140,8 +169,8 @@ class gp:
         for i in range(120):
             for j in range(160):
                 if (i, j) in ref: 
-                    fyy[:, i, j] = xx[:, ref[(i, j)]]
-                    yvar[i, j] = self.sn ** 2
+                    fyy[:, i, j] = fxx[:, ref[(i, j)]]
+                    yvar[i, j] = self.sn[ref[(i, j)]] ** 2
                     continue
                 tyy = np.zeros([self.rain_wrf.shape[0]//12, ])
                 for i_ in self.ts:
@@ -152,7 +181,7 @@ class gp:
                 #     pause = 1
                 kyy = np.cov(tyy.T, ddof = 1)
                 mu_y = np.mean(tyy)
-                fit_y, fit_yvar = self.gp_fit(fxx = fxx, mu_fx = mu_x, kxx = kxx, kxy = kxy, mu_fy = mu_y, kyy = kyy)
+                fit_y, fit_yvar = self.gp_fit(fxx = fxx, mu_fx = mu_x, kxx = kxx + np.diag(self.sn**2), kxy = kxy, mu_fy = mu_y, kyy = kyy)
                 fyy[:, i, j] = fit_y
                 yvar[i, j] = fit_yvar
                 xvar[i, j] = kyy
@@ -174,24 +203,22 @@ class gp:
             # fyy2 = fyy_flat2.reshape([fyy_flat2.shape[0], 120, 160])
             pause = 1
 
-
-
         if plot == 1:
             fig, ax = plt.subplots(nrows = 2, ncols = 2, figsize=[16,10], subplot_kw={'projection': crs.PlateCarree()})
             # tmphigh = np.max([np.mean(self.rain_wrf, axis=0), np.mean(fyy, axis=0)])
-            tmp_rain_wrf = np.zeros([self.rain_wrf.shape[0], self.rain_wrf.shape[1], self.rain_wrf.shape[2]])
+            tmp_rain_wrf = np.zeros([self.rain_wrf.shape[0]//12, self.rain_wrf.shape[1], self.rain_wrf.shape[2]])
             for i_ in self.ts:
-                tmp_rain_wrf += self.rain_wrf[(i-1)::12, :, :]
-            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 1, color_high = -1)
+                tmp_rain_wrf += self.rain_wrf[(i_-1)::12, :, :]
+            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 0, color_high = -1)
             ax[0,0].set_title('(a) simulation')
-            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
+            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 0, color_high = -1)
             ax[0,1].set_title('(b) interpolation')
-            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1)
+            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 0)
             ax[1,1].set_title('(d) 1 sigma intp')
-            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1)
+            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 0)
             ax[1,0].set_title('(c) 1 sigma sim')
             plt.tight_layout()
-            plt.savefig('comp_new.pdf')
+            plt.savefig('comp_' + str(self.ts[0]) + '.pdf')
         pause = 1
 
         return
@@ -275,10 +302,69 @@ if __name__ == '__main__':
     # fig.subplots_adjust(hspace=0)
     # fig.savefig('hov_diag.pdf')
 
-    
+    kge0 = np.zeros([12, 14, 2])
+    cc0 = np.zeros([12, 14, 2])
     for i in range(12):
         t1 = time.time()
         tmp = gp(target_season=[i+1])
-        tmp.validation()
-        tmp.interpolate(write_ = 1)
+        # tmp.sn_converge()
+        tkge, tcc = tmp.validation()
+        kge0[i, :, :] = tkge
+        cc0[i, :, :] = tcc
+        tmp.interpolate(write_ = 1, plot = 1)
         print('month {} used {:.2f} sec'.format(i + 1, time.time() - t1))
+    
+    kge1 = np.zeros([12, 14, 2])
+    cc1 = np.zeros([12, 14, 2])
+    for i in range(12):
+        t1 = time.time()
+        tmp = gp(target_season=[i+1])
+        tmp.sn_converge()
+        tkge, tcc = tmp.validation()
+        kge1[i, :, :] = tkge
+        cc1[i, :, :] = tcc
+        tmp.interpolate(write_ = 1, plot = 1)
+        print('month {} used {:.2f} sec'.format(i + 1, time.time() - t1))
+    
+    fig, ax = plt.subplots(nrows=2, ncols=2, figsize = [14, 8])
+    ps = np.arange(0, 14*3, 3)
+    ax[0][0].boxplot(cc0[:,:,0], positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops={'facecolor': 'skyblue'}, flierprops={'markersize': 5})
+    ax[0][0].boxplot(cc1[:,:,0], positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 5})
+    ax[0][0].boxplot(cc1[:,:,1], positions= ps + 0.5, widths = 0.4)
+    ax[0][0].set_xticks(ps)
+    ax[0][0].set_xticklabels(np.arange(1,15))
+    ax[0][0].set_xlabel('Station Idx')
+    ax[0][0].set_ylabel('CC')
+    ax[0][0].set_title('(a)')
+
+    ax[0][1].boxplot(kge0[:,:,0], positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 5})
+    ax[0][1].boxplot(kge1[:,:,0], positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 5})
+    ax[0][1].boxplot(kge1[:,:,1], positions= ps + 0.5, widths = 0.4)
+    ax[0][1].set_xticks(ps)
+    ax[0][1].set_xticklabels(np.arange(1,15))
+    ax[0][1].set_xlabel('Station Idx')
+    ax[0][1].set_ylabel('KGE')
+    ax[0][1].set_title('(b)')
+
+    ps = np.arange(0, 12*3, 3)
+    ax[1][0].boxplot(cc0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 5})
+    ax[1][0].boxplot(cc1[:,:,0].T, positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 5})
+    ax[1][0].boxplot(cc1[:,:,1].T, positions= ps + 0.5, widths = 0.4)
+    ax[1][0].set_xticks(ps)
+    ax[1][0].set_xticklabels(np.arange(1,13))
+    ax[1][0].set_xlabel('Month')
+    ax[1][0].set_ylabel('CC')
+    ax[1][0].set_title('(c)')
+
+    ax[1][1].boxplot(kge0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 5})
+    ax[1][1].boxplot(kge1[:,:,0].T, positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 5})
+    ax[1][1].boxplot(kge1[:,:,1].T, positions= ps + 0.5, widths = 0.4)
+    ax[1][1].set_xticks(ps)
+    ax[1][1].set_xticklabels(np.arange(1,13))
+    ax[1][1].set_xlabel('Month')
+    ax[1][1].set_ylabel('KGE')
+    ax[1][1].set_title('(d)')
+
+    fig.tight_layout()
+    fig.savefig('box_test.pdf')
+    pause = 1
