@@ -348,7 +348,7 @@ if __name__ == '__main__':
     ax[0][1].set_title('(b)')
 
     ps = np.arange(0, 12*3, 3)
-    ax[1][0].boxplot(cc0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    ax[1][0].boxplot(cc0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4, 'markerfacecolor': 'skyblue'})
     ax[1][0].boxplot(cc1[:,:,0].T, positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
     ax[1][0].boxplot(cc1[:,:,1].T, positions= ps + 0.5, widths = 0.4, flierprops={'markersize': 4})
     ax[1][0].set_xticks(ps)
@@ -357,7 +357,7 @@ if __name__ == '__main__':
     ax[1][0].set_ylabel('CC')
     ax[1][0].set_title('(c)')
 
-    ax[1][1].boxplot(kge0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    ax[1][1].boxplot(kge0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4, 'markerfacecolor': 'skyblue'})
     ax[1][1].boxplot(kge1[:,:,0].T, positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
     ax[1][1].boxplot(kge1[:,:,1].T, positions= ps + 0.5, widths = 0.4, flierprops={'markersize': 4})
     ax[1][1].set_xticks(ps)
