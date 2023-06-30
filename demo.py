@@ -209,13 +209,13 @@ class gp:
             tmp_rain_wrf = np.zeros([self.rain_wrf.shape[0]//12, self.rain_wrf.shape[1], self.rain_wrf.shape[2]])
             for i_ in self.ts:
                 tmp_rain_wrf += self.rain_wrf[(i_-1)::12, :, :]
-            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 0, color_high = -1)
+            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 1, color_high = -1)
             ax[0,0].set_title('(a) simulation')
-            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 0, color_high = -1)
+            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
             ax[0,1].set_title('(b) interpolation')
-            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 0)
+            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1)
             ax[1,1].set_title('(d) 1 sigma intp')
-            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 0)
+            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1)
             ax[1,0].set_title('(c) 1 sigma sim')
             plt.tight_layout()
             plt.savefig('comp_' + str(self.ts[0]) + '.pdf')
@@ -231,7 +231,7 @@ class gp:
         data_del = np.delete(data_del, np.s_[-buffer:], axis = n-1)
         return data_del
 
-    def map_plotter(self, ax, data, show_sta = 0, color_high = -1):
+    def map_plotter(self, ax, data, show_sta = 1, color_high = -1):
         self.coastline.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=1)
         # tmplon = self.slice_(self.lon, buffer = 10)
         # tmplat = self.slice_(self.lat, buffer = 10)
@@ -329,8 +329,8 @@ if __name__ == '__main__':
     mpl.rcParams.update({'font.size': 13})
     fig, ax = plt.subplots(nrows=2, ncols=2, figsize = [14, 8])
     ps = np.arange(0, 14*3, 3)
-    ax[0][0].boxplot(cc0[:,:,0], positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops={'facecolor': 'skyblue'}, flierprops={'markersize': 4})
-    ax[0][0].boxplot(cc1[:,:,0], positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4})
+    ax[0][0].boxplot(cc0[:,:,0], positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops={'facecolor': 'skyblue'}, flierprops={'markersize': 4, 'markerfacecolor': 'skyblue'})
+    ax[0][0].boxplot(cc1[:,:,0], positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
     ax[0][0].boxplot(cc1[:,:,1], positions= ps + 0.5, widths = 0.4, flierprops={'markersize': 4})
     ax[0][0].set_xticks(ps)
     ax[0][0].set_xticklabels(np.arange(1,15))
@@ -338,8 +338,8 @@ if __name__ == '__main__':
     ax[0][0].set_ylabel('CC')
     ax[0][0].set_title('(a)')
 
-    ax[0][1].boxplot(kge0[:,:,0], positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4})
-    ax[0][1].boxplot(kge1[:,:,0], positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4})
+    ax[0][1].boxplot(kge0[:,:,0], positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4, 'markerfacecolor': 'skyblue'})
+    ax[0][1].boxplot(kge1[:,:,0], positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
     ax[0][1].boxplot(kge1[:,:,1], positions= ps + 0.5, widths = 0.4, flierprops={'markersize': 4})
     ax[0][1].set_xticks(ps)
     ax[0][1].set_xticklabels(np.arange(1,15))
@@ -348,8 +348,8 @@ if __name__ == '__main__':
     ax[0][1].set_title('(b)')
 
     ps = np.arange(0, 12*3, 3)
-    ax[1][0].boxplot(cc0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4})
-    ax[1][0].boxplot(cc1[:,:,0].T, positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4})
+    ax[1][0].boxplot(cc0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    ax[1][0].boxplot(cc1[:,:,0].T, positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
     ax[1][0].boxplot(cc1[:,:,1].T, positions= ps + 0.5, widths = 0.4, flierprops={'markersize': 4})
     ax[1][0].set_xticks(ps)
     ax[1][0].set_xticklabels(np.arange(1,13))
@@ -357,8 +357,8 @@ if __name__ == '__main__':
     ax[1][0].set_ylabel('CC')
     ax[1][0].set_title('(c)')
 
-    ax[1][1].boxplot(kge0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4})
-    ax[1][1].boxplot(kge1[:,:,0].T, positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4})
+    ax[1][1].boxplot(kge0[:,:,0].T, positions= ps - 0.5, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='skyblue'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    ax[1][1].boxplot(kge1[:,:,0].T, positions= ps, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
     ax[1][1].boxplot(kge1[:,:,1].T, positions= ps + 0.5, widths = 0.4, flierprops={'markersize': 4})
     ax[1][1].set_xticks(ps)
     ax[1][1].set_xticklabels(np.arange(1,13))
