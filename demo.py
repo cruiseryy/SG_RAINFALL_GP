@@ -47,6 +47,8 @@ class gp:
         self.wrf_sta = np.array([self.rain_wrf[:, i, j] for _, (i, j) in enumerate(self.wrf_idx)]).T
 
         self.coastline = gpd.read_file('/home/mizu_home/xp53/nas_home/coastlines-split-SGregion/lines.shp')
+        self.mask = np.loadtxt('mask.txt')
+        pause = 1
         return
     
     def kge(self, true_, fit):
@@ -150,10 +152,7 @@ class gp:
         return np.array(score_kge), np.array(score_cc)
     
     
-    def interpolate(self, plot = 0, write_ = 0):
-        idx = 0
-        mp = np.zeros([2, 120*160])
-        yy = np.zeros([40, 120*160])
+    def interpolate1(self, plot = 0, write_ = 0):
 
         xx = np.zeros([self.wrf_sta.shape[0]//12, self.wrf_sta.shape[1]])
         xx_obs = np.zeros([self.rain_sta.shape[0]//12, self.rain_sta.shape[1]])
@@ -221,13 +220,78 @@ class gp:
 
         return
     
-    def slice_(self, data, buffer = 5):
-        n = len(data.shape)
-        data_del = np.delete(data, np.s_[0:buffer], axis = n-2)
-        data_del = np.delete(data_del, np.s_[-3*buffer:], axis = n-2)
-        data_del = np.delete(data_del, np.s_[0:2*buffer], axis = n-1)
-        data_del = np.delete(data_del, np.s_[-buffer:], axis = n-1)
-        return data_del
+    def interpolate2(self, n = 1000, plot_ = 0, write_ = 0):
+
+        xx = np.zeros([self.wrf_sta.shape[0]//12, self.wrf_sta.shape[1]])
+        xx_obs = np.zeros([self.rain_sta.shape[0]//12, self.rain_sta.shape[1]])
+        
+        ref = {(i, j):idx for idx, (i, j) in enumerate(self.wrf_idx)}
+        data_array_full = []
+        loc = []
+        for i in range(120):
+            for j in range(160):
+                if (i, j) in ref:
+                    continue
+                data_array_full.append(self.rain_wrf[:, i, j])
+                loc.append([i, j])
+        data_array_full = np.array(data_array_full).T
+        data_array = np.zeros([data_array_full.shape[0]//12, data_array_full.shape[1]])
+
+        for i_ in self.ts:
+            xx += self.wrf_sta[(i_-1)::12, :]
+            xx_obs += self.rain_sta[(i_-1)::12, :]
+            data_array += data_array_full[(i_-1)::12, :]
+
+        kyy = np.cov(data_array.T, ddof = 1)
+        kyx = np.cov(data_array.T, xx.T, ddof = 1)[:data_array.shape[1], data_array.shape[1]:]
+        mu_x = np.mean(xx, axis = 0)
+        mu_y = np.mean(data_array, axis = 0)
+        kxx = np.cov(xx.T, ddof = 1)
+
+        mu_yn = kyx @ np.linalg.inv(kxx + np.diag(self.sn**2)) @ (xx_obs - mu_x).T + mu_y[:, None]
+        kyyn = kyy - kyx @ np.linalg.inv(kxx + np.diag(self.sn**2)) @ kyx.T
+
+        fyy = np.zeros([40, 120, 160])
+        yvar = np.zeros([120, 160])
+        xvar = np.zeros([120, 160])
+        for idx, (i, j) in enumerate(loc):
+            fyy[:, i, j] = mu_yn[idx, :]
+            yvar[i, j] = kyyn[idx, idx]
+            xvar[i, j] = kyy[idx, idx]
+        for idx, (i, j) in enumerate(self.wrf_idx):
+            fyy[:, i, j] = xx_obs[:, idx]
+            yvar[i, j] = self.sn[idx] ** 2
+            
+        
+
+        if write_ == 1:
+            fyy_flat = fyy.reshape([fyy.shape[0], -1])
+            np.savetxt('output/MU_interp' + str(self.ts[0]) +'.csv', fyy_flat)
+            # fyy_flat2 = np.loadtxt('interp.csv')
+            # fyy2 = fyy_flat2.reshape([fyy_flat2.shape[0], 120, 160])
+            pause = 1
+
+        if plot_ == 1:
+            fig, ax = plt.subplots(nrows = 2, ncols = 2, figsize=[12,8], subplot_kw={'projection': crs.PlateCarree()})
+            # tmphigh = np.max([np.mean(self.rain_wrf, axis=0), np.mean(fyy, axis=0)])
+            tmp_rain_wrf = np.zeros([self.rain_wrf.shape[0]//12, self.rain_wrf.shape[1], self.rain_wrf.shape[2]])
+            for i_ in self.ts:
+                tmp_rain_wrf += self.rain_wrf[(i_-1)::12, :, :]
+            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 1, color_high = -1)
+            ax[0,0].set_title('(a) simulation')
+            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
+            ax[0,1].set_title('(b) interpolation')
+            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1)
+            ax[1,1].set_title('(d) 1 sigma intp')
+            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1)
+            ax[1,0].set_title('(c) 1 sigma sim')
+            plt.tight_layout()
+            plt.savefig('figs/comp_' + str(self.ts[0]) + '.pdf')
+            plt.close(fig)
+        pause = 1
+        return
+
+        
 
     def map_plotter(self, ax, data, show_sta = 1, color_high = -1):
         self.coastline.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=1)
@@ -281,7 +345,11 @@ class gp:
 
 
 if __name__ == '__main__':
-    
+    # tmp = gp(target_season = [2])
+    # tmp.sn_converge()
+    # tmp.interpolate()
+    # tmp.interpolate_un_range()
+
     # pause = 1
     # tmp = gp()
     # fig, ax = plt.subplots(figsize=[20,15], subplot_kw={'projection': crs.PlateCarree ()})
@@ -321,11 +389,12 @@ if __name__ == '__main__':
         tkge, tcc = tmp.validation()
         kge1[i, :, :] = tkge
         cc1[i, :, :] = tcc
-        tmp.interpolate(write_ = 1, plot = 1)
+        tmp.interpolate2(write_ = 1, plot_ = 1)
         print('month {} used {:.2f} sec'.format(i + 1, time.time() - t1))
 
-    mpl.rcParams.update({'font.size': 13})
-    fig, ax = plt.subplots(nrows=2, ncols=2, figsize = [12, 7])
+    pause = 1
+    mpl.rcParams.update({'font.size': 14})
+    fig, ax = plt.subplots(nrows=2, ncols=2, figsize = [14, 8])
     ps = np.arange(0, 14*2, 2)
     ax[0][0].boxplot(cc1[:,:,0], positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
     ax[0][0].boxplot(cc1[:,:,1], positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
@@ -341,9 +410,9 @@ if __name__ == '__main__':
     ax[0][1].set_xticklabels(np.arange(1,15))
     ax[0][1].set_xlabel('Station Idx')
     ax[0][1].set_ylabel('KGE')
-    ax[0][1].set_title('(b)')
+    ax[0][1].set_title('(a)')
 
-    ps = np.arange(0, 12*3, 3)
+    ps = np.arange(0, 12*2, 2)
     ax[1][0].boxplot(cc1[:,:,0].T, positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
     ax[1][0].boxplot(cc1[:,:,1].T, positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
     ax[1][0].set_xticks(ps)
@@ -352,14 +421,13 @@ if __name__ == '__main__':
     ax[1][0].set_ylabel('CC')
     ax[1][0].set_title('(c)')
 
-    ax[1][1].boxplot(kge1[:,:,0].T, positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'}, label = 'interpolation')
-    ax[1][1].boxplot(kge1[:,:,1].T, positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4}, label = 'raw simulation')
+    ax[1][1].boxplot(kge1[:,:,0].T, positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    ax[1][1].boxplot(kge1[:,:,1].T, positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
     ax[1][1].set_xticks(ps)
     ax[1][1].set_xticklabels(np.arange(1,13))
     ax[1][1].set_xlabel('Month')
     ax[1][1].set_ylabel('KGE')
-    ax[1][1].set_title('(d)')
-    ax[1][1].legend()
+    ax[1][1].set_title('(b)')
     fig.tight_layout()
-    fig.savefig('figs/box_test.pdf')
+    fig.savefig('figs/box_test_one_column.pdf')
     pause = 1
