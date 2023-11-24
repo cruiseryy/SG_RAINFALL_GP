@@ -11,6 +11,9 @@ import matplotlib.ticker as mticker
 
 from matplotlib import gridspec
 import time 
+import scipy.stats as stats
+import tensorflow as tf
+import tensorflow_probability as tfp
 
 plt.rcParams['font.family'] = 'Myriad Pro'
 
@@ -220,7 +223,7 @@ class gp:
 
         return
     
-    def interpolate2(self, n = 1000, plot_ = 0, write_ = 0):
+    def interpolate2(self, plot_ = 0, write_ = 0):
 
         xx = np.zeros([self.wrf_sta.shape[0]//12, self.wrf_sta.shape[1]])
         xx_obs = np.zeros([self.rain_sta.shape[0]//12, self.rain_sta.shape[1]])
@@ -261,12 +264,14 @@ class gp:
         for idx, (i, j) in enumerate(self.wrf_idx):
             fyy[:, i, j] = xx_obs[:, idx]
             yvar[i, j] = self.sn[idx] ** 2
-            
         
+        self.mu_post = mu_yn
+        self.cov_post = kyyn
+        self.loc = loc
 
         if write_ == 1:
             fyy_flat = fyy.reshape([fyy.shape[0], -1])
-            np.savetxt('output/MU_interp' + str(self.ts[0]) +'.csv', fyy_flat)
+            np.savetxt('output/MC_MU_interp' + str(self.ts[0]) +'.csv', fyy_flat)
             # fyy_flat2 = np.loadtxt('interp.csv')
             # fyy2 = fyy_flat2.reshape([fyy_flat2.shape[0], 120, 160])
             pause = 1
@@ -286,11 +291,51 @@ class gp:
             self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1)
             ax[1,0].set_title('(c) 1 sigma sim')
             plt.tight_layout()
-            plt.savefig('figs/comp_' + str(self.ts[0]) + '.pdf')
+            plt.savefig('figs/MC_comp_' + str(self.ts[0]) + '.pdf')
             plt.close(fig)
         pause = 1
         return
+    
+    def MC_generate(self, nn = 1000):
 
+        xx_obs = np.zeros([self.rain_sta.shape[0]//12, self.rain_sta.shape[1]])
+        for i_ in self.ts:
+            xx_obs += self.rain_sta[(i_-1)::12, :]
+        
+        sample_all = []
+        obs_all = []
+        for t in range(self.mu_post.shape[1]):
+            mu = self.mu_post[:, t]
+
+            t1 = time.time()
+            mu_tf = tf.convert_to_tensor(mu, dtype=tf.float32)
+            tmp_cov = self.cov_post + np.eye(self.cov_post.shape[0]) * np.mean(np.diag(self.cov_post)) * 1e-4
+            cov_tf = tf.convert_to_tensor(tmp_cov, dtype=tf.float32)
+            mvn = tfp.distributions.MultivariateNormalFullCovariance(loc=mu_tf, covariance_matrix=cov_tf)
+            data_sample1 = mvn.sample(sample_shape=(nn,))
+            print('time used for sampling {} is {:.2f} sec'.format(t, time.time() - t1))
+
+            data_sample = data_sample1.numpy()
+            data_sample[data_sample < 0] = 0
+
+            data_map = np.zeros((nn, 120, 160))
+            mu_map = np.zeros((120, 160))
+            for idx, (i, j) in enumerate(self.loc):
+                data_map[:, i, j] = data_sample[:, idx]
+                mu_map[i, j] = mu[idx]
+            for idx, (i, j) in enumerate(self.wrf_idx):
+                data_map[:, i, j] = xx_obs[t, idx]
+                mu_map[i, j] = mu[idx]
+            
+            mu_map = np.multiply(mu_map, self.mask)
+            data_map = np.multiply(data_map, self.mask)
+            r_avg = np.nanmean(data_map, axis = (1, 2))
+            print('the median of the avg rainfall is {:.2f} ({:.2f}), obs = {:.2f}'.format(np.median(r_avg), np.nanmean(mu_map), np.mean(xx_obs[t, :])))
+            sample_all.append(r_avg)
+            obs_all.append(np.mean(xx_obs[t, :]))
+        
+        return np.array(sample_all), np.array(obs_all)
+            
         
 
     def map_plotter(self, ax, data, show_sta = 1, color_high = -1):
@@ -380,54 +425,67 @@ if __name__ == '__main__':
     #     tmp.interpolate(write_ = 1, plot = 1)
     #     print('month {} used {:.2f} sec'.format(i + 1, time.time() - t1))
     
-    kge1 = np.zeros([12, 14, 2])
-    cc1 = np.zeros([12, 14, 2])
-    for i in range(12):
+    # kge1 = np.zeros([12, 14, 2])
+    # cc1 = np.zeros([12, 14, 2])
+    # for i in range(12):
+    #     t1 = time.time()
+    #     tmp = gp(target_season=[i+1])
+    #     tmp.sn_converge()
+    #     tkge, tcc = tmp.validation()
+    #     kge1[i, :, :] = tkge
+    #     cc1[i, :, :] = tcc
+    #     tmp.interpolate2(write_ = 1, plot_ = 1)
+    #     print('month {} used {:.2f} sec'.format(i + 1, time.time() - t1))
+
+    # pause = 1
+    # mpl.rcParams.update({'font.size': 14})
+    # fig, ax = plt.subplots(nrows=2, ncols=2, figsize = [14, 8])
+    # ps = np.arange(0, 14*2, 2)
+    # ax[0][0].boxplot(cc1[:,:,0], positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    # ax[0][0].boxplot(cc1[:,:,1], positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
+    # ax[0][0].set_xticks(ps)
+    # ax[0][0].set_xticklabels(np.arange(1,15))
+    # ax[0][0].set_xlabel('Station Idx')
+    # ax[0][0].set_ylabel('CC')
+    # ax[0][0].set_title('(a)')
+
+    # ax[0][1].boxplot(kge1[:,:,0], positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    # ax[0][1].boxplot(kge1[:,:,1], positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
+    # ax[0][1].set_xticks(ps)
+    # ax[0][1].set_xticklabels(np.arange(1,15))
+    # ax[0][1].set_xlabel('Station Idx')
+    # ax[0][1].set_ylabel('KGE')
+    # ax[0][1].set_title('(a)')
+
+    # ps = np.arange(0, 12*2, 2)
+    # ax[1][0].boxplot(cc1[:,:,0].T, positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    # ax[1][0].boxplot(cc1[:,:,1].T, positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
+    # ax[1][0].set_xticks(ps)
+    # ax[1][0].set_xticklabels(np.arange(1,13))
+    # ax[1][0].set_xlabel('Month')
+    # ax[1][0].set_ylabel('CC')
+    # ax[1][0].set_title('(c)')
+
+    # ax[1][1].boxplot(kge1[:,:,0].T, positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
+    # ax[1][1].boxplot(kge1[:,:,1].T, positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
+    # ax[1][1].set_xticks(ps)
+    # ax[1][1].set_xticklabels(np.arange(1,13))
+    # ax[1][1].set_xlabel('Month')
+    # ax[1][1].set_ylabel('KGE')
+    # ax[1][1].set_title('(b)')
+    # fig.tight_layout()
+    # fig.savefig('figs/box_test_one_column.pdf')
+    # pause = 1
+
+    selected_month = [1, 11]
+    for i in selected_month:
         t1 = time.time()
         tmp = gp(target_season=[i+1])
         tmp.sn_converge()
-        tkge, tcc = tmp.validation()
-        kge1[i, :, :] = tkge
-        cc1[i, :, :] = tcc
+        tmp.validation()
         tmp.interpolate2(write_ = 1, plot_ = 1)
         print('month {} used {:.2f} sec'.format(i + 1, time.time() - t1))
-
-    pause = 1
-    mpl.rcParams.update({'font.size': 14})
-    fig, ax = plt.subplots(nrows=2, ncols=2, figsize = [14, 8])
-    ps = np.arange(0, 14*2, 2)
-    ax[0][0].boxplot(cc1[:,:,0], positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
-    ax[0][0].boxplot(cc1[:,:,1], positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
-    ax[0][0].set_xticks(ps)
-    ax[0][0].set_xticklabels(np.arange(1,15))
-    ax[0][0].set_xlabel('Station Idx')
-    ax[0][0].set_ylabel('CC')
-    ax[0][0].set_title('(a)')
-
-    ax[0][1].boxplot(kge1[:,:,0], positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
-    ax[0][1].boxplot(kge1[:,:,1], positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
-    ax[0][1].set_xticks(ps)
-    ax[0][1].set_xticklabels(np.arange(1,15))
-    ax[0][1].set_xlabel('Station Idx')
-    ax[0][1].set_ylabel('KGE')
-    ax[0][1].set_title('(a)')
-
-    ps = np.arange(0, 12*2, 2)
-    ax[1][0].boxplot(cc1[:,:,0].T, positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
-    ax[1][0].boxplot(cc1[:,:,1].T, positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
-    ax[1][0].set_xticks(ps)
-    ax[1][0].set_xticklabels(np.arange(1,13))
-    ax[1][0].set_xlabel('Month')
-    ax[1][0].set_ylabel('CC')
-    ax[1][0].set_title('(c)')
-
-    ax[1][1].boxplot(kge1[:,:,0].T, positions= ps - 0.3, widths = 0.4, patch_artist=True, boxprops=dict(facecolor='lightgreen'), flierprops={'markersize': 4, 'markerfacecolor': 'lightgreen'})
-    ax[1][1].boxplot(kge1[:,:,1].T, positions= ps + 0.3, widths = 0.4, flierprops={'markersize': 4})
-    ax[1][1].set_xticks(ps)
-    ax[1][1].set_xticklabels(np.arange(1,13))
-    ax[1][1].set_xlabel('Month')
-    ax[1][1].set_ylabel('KGE')
-    ax[1][1].set_title('(b)')
-    fig.tight_layout()
-    fig.savefig('figs/box_test_one_column.pdf')
-    pause = 1
+        rain_samples, rain_obs = tmp.MC_generate(nn = 1000)
+        np.savetxt('rain_samples' + str(i+1) + '.csv', rain_samples)
+        np.savetxt('rain_obs' + str(i+1) + '.csv', rain_obs)
+        pause = 1
