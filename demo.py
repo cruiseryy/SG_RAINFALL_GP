@@ -51,6 +51,13 @@ class gp:
 
         self.coastline = gpd.read_file('/home/mizu_home/xp53/nas_home/coastlines-split-SGregion/lines.shp')
         self.mask = np.loadtxt('mask.txt')
+
+        # a small tweak to use cmip6 covariance matrix 
+        cmip_rain_f = np.loadtxt('data/wrf_monthly_cmip.txt')[-40:, :]
+        cmip_rain0 = cmip_rain_f.reshape(cmip_rain_f.shape[0], 12, 120, 160)
+        self.cmip_rain = np.zeros(cmip_rain0.shape)
+        self.cmip_rain[:, 0:6, :, :] = cmip_rain0[:, 6:12, :, :]
+        self.cmip_rain[:, 6:12, :, :] = cmip_rain0[:, 0:6, :, :]
         pause = 1
         return
     
@@ -247,10 +254,10 @@ class gp:
 
         kyy = np.cov(data_array.T, ddof = 1)
         kyx = np.cov(data_array.T, xx.T, ddof = 1)[:data_array.shape[1], data_array.shape[1]:]
+        kxx = np.cov(xx.T, ddof = 1)
         mu_x = np.mean(xx, axis = 0)
         mu_y = np.mean(data_array, axis = 0)
-        kxx = np.cov(xx.T, ddof = 1)
-
+        
         mu_yn = kyx @ np.linalg.inv(kxx + np.diag(self.sn**2)) @ (xx_obs - mu_x).T + mu_y[:, None]
         kyyn = kyy - kyx @ np.linalg.inv(kxx + np.diag(self.sn**2)) @ kyx.T
 
@@ -264,7 +271,10 @@ class gp:
         for idx, (i, j) in enumerate(self.wrf_idx):
             fyy[:, i, j] = xx_obs[:, idx]
             yvar[i, j] = self.sn[idx] ** 2
-        
+        mu_masked = np.multiply(fyy, self.mask)
+        mu_masked[mu_masked < 0] = 0
+        mu_avg = np.nanmean(mu_masked, axis = (1, 2))
+        np.savetxt('mu_avg' + str(self.ts[0]) + '.csv', mu_avg)
         self.mu_post = mu_yn
         self.cov_post = kyyn
         self.loc = loc
@@ -292,6 +302,82 @@ class gp:
             ax[1,0].set_title('(c) 1 sigma sim')
             plt.tight_layout()
             plt.savefig('figs/MC_comp_' + str(self.ts[0]) + '.pdf')
+            plt.close(fig)
+        pause = 1
+        return
+    
+    def interpolate3(self, plot_ = 0, write_ = 0):
+        
+        tt = self.ts[0] - 1
+
+        ref = {(i, j):idx for idx, (i, j) in enumerate(self.wrf_idx)}
+        
+        data_array = []
+        loc = []
+        xx = []
+        for _, (i, j) in enumerate(self.wrf_idx):
+            xx.append(self.cmip_rain[:, tt, i, j])
+
+        for i in range(120):
+            for j in range(160):
+                if (i, j) in ref:
+                    continue
+                data_array.append(self.cmip_rain[:, tt, i, j])
+                loc.append([i, j])
+        xx = np.array(xx).T
+        data_array = np.array(data_array).T
+        xx_obs = self.rain_sta[tt::12, :]
+
+        kyy = np.cov(data_array.T, ddof = 1)
+        kyx = np.cov(data_array.T, xx.T, ddof = 1)[:data_array.shape[1], data_array.shape[1]:]
+        kxx = np.cov(xx.T, ddof = 1)
+        mu_x = np.mean(xx, axis = 0)
+        mu_y = np.mean(data_array, axis = 0)
+        
+        mu_yn = kyx @ np.linalg.inv(kxx + np.diag(self.sn**2)) @ (xx_obs - mu_x).T + mu_y[:, None]
+        kyyn = kyy - kyx @ np.linalg.inv(kxx + np.diag(self.sn**2)) @ kyx.T
+
+        fyy = np.zeros([40, 120, 160])
+        yvar = np.zeros([120, 160])
+        xvar = np.zeros([120, 160])
+        for idx, (i, j) in enumerate(loc):
+            fyy[:, i, j] = mu_yn[idx, :]
+            yvar[i, j] = kyyn[idx, idx]
+            xvar[i, j] = kyy[idx, idx]
+        for idx, (i, j) in enumerate(self.wrf_idx):
+            fyy[:, i, j] = xx_obs[:, idx]
+            yvar[i, j] = self.sn[idx] ** 2
+        mu_masked = np.multiply(fyy, self.mask)
+        mu_masked[mu_masked < 0] = 0
+        mu_avg = np.nanmean(mu_masked, axis = (1, 2))
+        np.savetxt('cmip_mu_avg' + str(self.ts[0]) + '.csv', mu_avg)
+        self.mu_post = mu_yn
+        self.cov_post = kyyn
+        self.loc = loc
+
+        if write_ == 1:
+            fyy_flat = fyy.reshape([fyy.shape[0], -1])
+            np.savetxt('output/cmip_MU_interp' + str(self.ts[0]) +'.csv', fyy_flat)
+            # fyy_flat2 = np.loadtxt('interp.csv')
+            # fyy2 = fyy_flat2.reshape([fyy_flat2.shape[0], 120, 160])
+            pause = 1
+
+        if plot_ == 1:
+            fig, ax = plt.subplots(nrows = 2, ncols = 2, figsize=[12,8], subplot_kw={'projection': crs.PlateCarree()})
+            # tmphigh = np.max([np.mean(self.rain_wrf, axis=0), np.mean(fyy, axis=0)])
+            tmp_rain_wrf = np.zeros([self.rain_wrf.shape[0]//12, self.rain_wrf.shape[1], self.rain_wrf.shape[2]])
+            for i_ in self.ts:
+                tmp_rain_wrf += self.rain_wrf[(i_-1)::12, :, :]
+            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 1, color_high = -1)
+            ax[0,0].set_title('(a) simulation')
+            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
+            ax[0,1].set_title('(b) interpolation')
+            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1)
+            ax[1,1].set_title('(d) 1 sigma intp')
+            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1)
+            ax[1,0].set_title('(c) 1 sigma sim')
+            plt.tight_layout()
+            plt.savefig('figs/cmip_comp_' + str(self.ts[0]) + '.pdf')
             plt.close(fig)
         pause = 1
         return
@@ -325,9 +411,8 @@ class gp:
                 mu_map[i, j] = mu[idx]
             for idx, (i, j) in enumerate(self.wrf_idx):
                 data_map[:, i, j] = xx_obs[t, idx]
-                mu_map[i, j] = mu[idx]
+                mu_map[i, j] = xx_obs[idx]
             
-            mu_map = np.multiply(mu_map, self.mask)
             data_map = np.multiply(data_map, self.mask)
             r_avg = np.nanmean(data_map, axis = (1, 2))
             print('the median of the avg rainfall is {:.2f} ({:.2f}), obs = {:.2f}'.format(np.median(r_avg), np.nanmean(mu_map), np.mean(xx_obs[t, :])))
@@ -477,15 +562,15 @@ if __name__ == '__main__':
     # fig.savefig('figs/box_test_one_column.pdf')
     # pause = 1
 
-    selected_month = [1, 11]
+    selected_month = [2, 12]
     for i in selected_month:
         t1 = time.time()
-        tmp = gp(target_season=[i+1])
+        tmp = gp(target_season=[i])
         tmp.sn_converge()
         tmp.validation()
         tmp.interpolate2(write_ = 1, plot_ = 1)
         print('month {} used {:.2f} sec'.format(i + 1, time.time() - t1))
-        rain_samples, rain_obs = tmp.MC_generate(nn = 1000)
-        np.savetxt('rain_samples' + str(i+1) + '.csv', rain_samples)
-        np.savetxt('rain_obs' + str(i+1) + '.csv', rain_obs)
+        # rain_samples, rain_obs = tmp.MC_generate(nn = 1000)
+        # np.savetxt('rain_samples' + str(i+1) + '.csv', rain_samples)
+        # np.savetxt('rain_obs' + str(i+1) + '.csv', rain_obs)
         pause = 1
