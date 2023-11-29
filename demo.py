@@ -411,8 +411,9 @@ class gp:
                 mu_map[i, j] = mu[idx]
             for idx, (i, j) in enumerate(self.wrf_idx):
                 data_map[:, i, j] = xx_obs[t, idx]
-                mu_map[i, j] = xx_obs[idx]
+                mu_map[i, j] = xx_obs[t, idx]
             
+            mu_map = np.multiply(mu_map, self.mask)
             data_map = np.multiply(data_map, self.mask)
             r_avg = np.nanmean(data_map, axis = (1, 2))
             print('the median of the avg rainfall is {:.2f} ({:.2f}), obs = {:.2f}'.format(np.median(r_avg), np.nanmean(mu_map), np.mean(xx_obs[t, :])))
@@ -568,9 +569,9 @@ if __name__ == '__main__':
         tmp = gp(target_season=[i])
         tmp.sn_converge()
         tmp.validation()
-        tmp.interpolate2(write_ = 1, plot_ = 1)
-        print('month {} used {:.2f} sec'.format(i + 1, time.time() - t1))
-        # rain_samples, rain_obs = tmp.MC_generate(nn = 1000)
-        # np.savetxt('rain_samples' + str(i+1) + '.csv', rain_samples)
-        # np.savetxt('rain_obs' + str(i+1) + '.csv', rain_obs)
+        tmp.interpolate3(write_ = 1, plot_ = 1)
+        print('month {} used {:.2f} sec'.format(i, time.time() - t1))
+        rain_samples, rain_obs = tmp.MC_generate(nn = 1000)
+        np.savetxt('rain_samples' + str(i) + '.csv', rain_samples)
+        np.savetxt('rain_obs' + str(i) + '.csv', rain_obs)
         pause = 1
