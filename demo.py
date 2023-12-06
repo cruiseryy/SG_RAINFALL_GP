@@ -156,7 +156,7 @@ class gp:
         ax[3][2].axis('off')
         ax[3][3].axis('off')
         plt.tight_layout()
-        fig.savefig('figs/validation' + str(self.ts[0]) + '.pdf')
+        fig.savefig('figs/0validation' + str(self.ts[0]) + '.pdf')
         plt.close(fig)
         pause = 1
         return np.array(score_kge), np.array(score_cc)
@@ -215,13 +215,18 @@ class gp:
             tmp_rain_wrf = np.zeros([self.rain_wrf.shape[0]//12, self.rain_wrf.shape[1], self.rain_wrf.shape[2]])
             for i_ in self.ts:
                 tmp_rain_wrf += self.rain_wrf[(i_-1)::12, :, :]
-            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 1, color_high = -1)
+            m_rain_wrf = np.multiply(tmp_rain_wrf, self.mask)
+            tmpmax1 = np.nanmax(m_rain_wrf)
+            m_fyy = np.multiply(fyy, self.mask)
+            tmpmax2 = np.nanmax(m_fyy)
+            tmpmax = np.max([tmpmax1, tmpmax2])
+            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 1, vmax=tmpmax, vmin=0)
             ax[0,0].set_title('(a) simulation')
-            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
+            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, vmax=tmpmax, vmin=0)
             ax[0,1].set_title('(b) interpolation')
-            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1)
+            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1, vmax=360, vmin=0)
             ax[1,1].set_title('(d) 1 sigma intp')
-            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1)
+            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1, vmax=360, vmin=0)
             ax[1,0].set_title('(c) 1 sigma sim')
             plt.tight_layout()
             plt.savefig('figs/comp_' + str(self.ts[0]) + '.pdf')
@@ -292,13 +297,26 @@ class gp:
             tmp_rain_wrf = np.zeros([self.rain_wrf.shape[0]//12, self.rain_wrf.shape[1], self.rain_wrf.shape[2]])
             for i_ in self.ts:
                 tmp_rain_wrf += self.rain_wrf[(i_-1)::12, :, :]
-            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 1, color_high = -1)
+
+            m_rain_wrf = np.multiply(np.mean(tmp_rain_wrf, axis=0), self.mask)
+            m_fyy = np.multiply(np.mean(fyy, axis=0), self.mask)
+            tmpmax = np.max([np.nanmax(m_rain_wrf), np.nanmax(m_fyy)])
+            tmpmin = np.min([np.nanmin(m_rain_wrf), np.nanmin(m_fyy)])
+
+            post_sigma = np.sqrt(yvar)
+            m_post_sigma = np.multiply(post_sigma, self.mask)
+            sigma_min, sigma_max = np.nanmin(m_post_sigma), np.nanmax(m_post_sigma)
+            print('min and max of post sigma are {:.2f} and {:.2f}'.format(sigma_min, sigma_max))
+
+            tmpmax2 = ((tmpmax // 20) + 1) * 20
+
+            self.map_plotter(ax[0,0], data = np.mean(tmp_rain_wrf, axis=0), show_sta = 1, vmax=tmpmax2, vmin=0)
             ax[0,0].set_title('(a) simulation')
-            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, color_high = -1)
+            self.map_plotter(ax[0,1], data = np.mean(fyy, axis=0), show_sta = 1, vmax=tmpmax2, vmin=0)
             ax[0,1].set_title('(b) interpolation')
-            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1)
+            self.map_plotter(ax[1,1], data = np.sqrt(yvar), show_sta = 1, vmax = 200, vmin = 0)
             ax[1,1].set_title('(d) 1 sigma intp')
-            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1)
+            self.map_plotter(ax[1,0], data = np.sqrt(xvar), show_sta = 1, vmax = 200, vmin = 0)
             ax[1,0].set_title('(c) 1 sigma sim')
             plt.tight_layout()
             plt.savefig('figs/MC_comp_' + str(self.ts[0]) + '.pdf')
@@ -424,20 +442,28 @@ class gp:
             
         
 
-    def map_plotter(self, ax, data, show_sta = 1, color_high = -1):
+    def map_plotter(self, ax, data, show_sta = 1, vmax=-1, vmin=-1):
+
+        ipcc_precip_colors = [(84,48,5), (110,68,15), (137,88,25), (164,108,35), (191,129,44), (200,148,79), (210,169,113), (220,189,147), (229,209,180), (239,228,215), (248,248,247), (216,232,231), (183,216,213), (151,200,195), (118,183,178), (85,167,160), (53,151,143), (39,128,119), (26,105,95), (13,82,71), (0,60,48)]
+
+        c_wet = np.array(ipcc_precip_colors) / 255
+        c_dry = np.array(ipcc_precip_colors[::-1]) / 255
+
+        # create a cmap with 10 colors defined by c_wet
+        cmap_wet = mpl.colors.ListedColormap(c_wet, name='precip_wet')
+        cmap_dry = mpl.colors.ListedColormap(c_dry, name='precip_dry')
+
         self.coastline.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=1)
         # tmplon = self.slice_(self.lon, buffer = 10)
         # tmplat = self.slice_(self.lat, buffer = 10)
         # tmpdata = self.slice_(data, buffer = 10)
-        if color_high != -1: 
-            data[0,0] = color_high
-        basemap = ax.contourf(self.lon, self.lat, data, levels=20, transform=crs.PlateCarree(), cmap="jet")
+        basemap = ax.contourf(self.lon, self.lat, data, levels=np.linspace(vmin, vmax, 21), transform=crs.PlateCarree(), cmap=cmap_wet, extend = 'max')
         for c in basemap.collections:
             c.set_edgecolor("face")
         if show_sta:
             sta_map = ax.scatter(self.wrf_loc[:,0], self.wrf_loc[:,1], s = 25, facecolors='k', marker='D')
         ax.set_extent([103.58, 104.12, 1.153, 1.502], crs=crs.PlateCarree())
-        cbar = plt.colorbar(basemap, ax=ax, orientation='vertical', shrink=0.7)
+        cbar = plt.colorbar(basemap, ax=ax, orientation='vertical', shrink=0.72)
         cbar.set_label('Rainfall [mm]')
         # cbar.mappable.set_clim(vmin=0, vmax=600) 
         gl = ax.gridlines(crs=crs.PlateCarree(), draw_labels=True, linewidth=1, color='gray', alpha=0.5, linestyle='--')
@@ -563,15 +589,15 @@ if __name__ == '__main__':
     # fig.savefig('figs/box_test_one_column.pdf')
     # pause = 1
 
-    selected_month = [2, 12]
+    selected_month = list(range(1, 13))
     for i in selected_month:
         t1 = time.time()
         tmp = gp(target_season=[i])
-        tmp.sn_converge()
+        # tmp.sn_converge()
         tmp.validation()
-        tmp.interpolate3(write_ = 1, plot_ = 1)
-        print('month {} used {:.2f} sec'.format(i, time.time() - t1))
-        rain_samples, rain_obs = tmp.MC_generate(nn = 1000)
-        np.savetxt('rain_samples' + str(i) + '.csv', rain_samples)
-        np.savetxt('rain_obs' + str(i) + '.csv', rain_obs)
+        # tmp.interpolate2(write_ = 0, plot_ = 1)
+        # print('month {} used {:.2f} sec'.format(i, time.time() - t1))
+        # rain_samples, rain_obs = tmp.MC_generate(nn = 1000)
+        # np.savetxt('rain_samples' + str(i) + '.csv', rain_samples)
+        # np.savetxt('rain_obs' + str(i) + '.csv', rain_obs)
         pause = 1
