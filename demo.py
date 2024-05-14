@@ -24,6 +24,9 @@ def kge(true_, fit):
     beta = np.mean(fit) / np.mean(true_)
     return 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
 
+def nse(true_, fit):
+    return 1 - np.sum((true_ - fit) ** 2) / np.sum((true_ - np.mean(true_)) ** 2)
+
 # given prior info: mu_x, mu_y, kxx, kyy, kxy (derived from simulated rainfall)
 # conditioned on some observation of x: xx_obs
 # update the posterior distribution of y: mu_y, cov_y
