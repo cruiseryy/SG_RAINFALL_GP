@@ -35,6 +35,36 @@ def gp_infer(xx_obs, mu_x, kyx, kxx, mu_y, kyy):
     kyy = kyy - kyx @ np.linalg.inv(kxx) @ kyx.T
     return mu_y.squeeze(), kyy
 
+class sg_map_plotter:
+    def __init__(self, lons, lats, coastline) -> None:
+        self.lons = lons
+        self.lats = lats
+        self.coastline = coastline
+        return
+    
+    def plot_(self, ax, data, cmap, vmax = -1, vmin = -1, hide_axis = [1, 1, 1, 1]):
+        self.coastline.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=1)
+        basemap = ax.contourf(self.lons, self.lats, data, levels=np.linspace(vmin, vmax, 21), transform=crs.PlateCarree(), cmap=cmap, extend = 'max')
+        ax.set_extent([103.58, 104.12, 1.153, 1.502], crs=crs.PlateCarree())
+
+        gl = ax.gridlines(crs=crs.PlateCarree(), draw_labels=True, linewidth=1, color='gray', alpha=0.5, linestyle='--')
+        gl.xlocator = mticker.FixedLocator([103.5, 103.6, 103.7, 103.8, 103.9, 104.0, 104.1])
+        gl.ylocator = mticker.FixedLocator([1.1, 1.2, 1.3, 1.4, 1.5])
+
+        if hide_axis[0]:
+            gl.bottom_labels = False
+        if hide_axis[1]:
+            gl.top_labels = False
+        if hide_axis[2]:
+            gl.left_labels = False
+        if hide_axis[3]:
+            gl.right_labels = False
+        return
+    
+    def plot_scatter(self, ax, loc, size = 25, facecolor = 'k', marker_type = 'D'):
+        ax.scatter(loc[:,0], loc[:,1], s = size, facecolors = facecolor, marker = marker_type)
+        return 
+
 class gp_interpolator:
     def __init__(self, P, e0 = 30, thres = 1e-3) -> None:
         # # of stations 
@@ -71,7 +101,7 @@ class gp_interpolator:
                 tmu_x = np.mean(txx, axis = 0)
                 tkxx = np.cov(txx.T, ddof = 1)
                 tkyx = np.cov(xx[:,j].T, txx.T, ddof = 1)[:1, 1:]
-                tmu_y = np.mean(xx[:,j])
+                tmu_y = np.mean(xx[:,j][:, None], axis = 0)
                 tkyy = np.cov(xx[:,j], ddof = 1)
                 txx_obs = np.delete(xx_obs, obj = j, axis = 1)
                 fit_y, _ = gp_infer(xx_obs = txx_obs, mu_x = tmu_x, kyx = tkyx, kxx = tkxx + np.diag(tsn**2),
@@ -82,7 +112,7 @@ class gp_interpolator:
     
     def predict(self, yy):
         kyy = np.cov(yy.T, ddof = 1)
-        mu_y = np.mean(yy, axis = 0)
+        mu_y = np.mean(yy[None, :], axis = 1).T
         kyx = np.cov(yy.T, self.wrf_sta.T, ddof = 1)[:yy.shape[1], yy.shape[1]:]
         post_mu_y, post_kyy = gp_infer(xx_obs = self.rain_obs, mu_x = self.mu_x, kyx = kyx, 
                                        kxx = self.kxx + np.diag(self.sn**2), mu_y = mu_y, kyy = kyy)

@@ -1,72 +1,75 @@
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
+import pandas as pd
+import math
 
-def get_ipcc_cmap(var = 'temp'):
+# author: cruiseryy 20240607
+# i did not create the color maps but i wrote a script to convert them to matplotlib colormaps
+# source = https://github.com/IPCC-WG1/colormaps/tree/master/discrete_colormaps_rgb_0-255
+# the excel file is also included in the repository
+# feel free to use, modify, and distribute the code
 
-    if var == 'prcp':
-        rgb = [[254, 254, 254],
-               [221, 237, 214],
-               [187, 220, 200],
-               [154, 203, 186],
-               [120, 185, 171],
-               [86, 168, 157],
-               [52, 150, 142],
-               [39, 128, 119],
-               [26, 105, 95],
-               [13, 82, 71],
-               [0, 60, 48]]
-
-    if var == 'prcp_deficit':
-        rgb = [[84, 48, 5],
-               [110, 68, 15],
-               [137, 88, 25],
-               [164, 108, 35],
-               [191, 129, 44],
-               [200, 148, 79],
-               [210, 169, 113],
-               [220, 189, 147],
-               [229, 209, 180],
-               [239, 228, 215],
-               [254, 254, 254]]
-        rgb = rgb[::-1]
-
-    if var == 'temp':
-        rgb = [[254, 254, 203],
-               [251, 237, 158],
-               [245, 212, 112],
-               [238, 178, 87],
-               [231, 147, 82],
-               [222, 116, 79],
-               [194, 84, 73],
-               [149, 65, 61],
-               [104, 52, 42],
-               [62, 38, 22],
-               [25, 25, 0]]
-        
-    if var == 'prcp_21':
-        rgb = [(84,48,5), 
-               (110,68,15), 
-               (137,88,25), 
-               (164,108,35), 
-               (191,129,44), 
-               (200,148,79), 
-               (210,169,113), 
-               (220,189,147), 
-               (229,209,180), 
-               (239,228,215), 
-               (248,248,247), 
-               (216,232,231), 
-               (183,216,213), 
-               (151,200,195), 
-               (118,183,178), 
-               (85,167,160), 
-               (53,151,143), 
-               (39,128,119), 
-               (26,105,95), 
-               (13,82,71), 
-               (0,60,48)]
-
+class ipcc_cmap: 
+    def __init__(self, file_path = 'ipcc_disc_cmaps.xlsx'):
+        self.file_path = file_path
+        return
     
-    rgb_normalized = np.array(rgb) / 255.0
-    custom_colormap = LinearSegmentedColormap.from_list("Custom_Colormap", rgb_normalized)
-    return custom_colormap
+    def read_rgb_data_from_excel(self):
+        self.CMAP = {}
+        xl = pd.ExcelFile(self.file_path)
+
+        for sheet_name in xl.sheet_names:
+            df = xl.parse(sheet_name, header = None)
+            df = df.dropna(how='all')
+
+            current_header = None
+            color_data = []
+
+            for index, row in df.iterrows():
+                if math.isnan(row[1]):
+                    if current_header is not None:
+                        self.CMAP[current_header] = color_data
+                    color_data = []
+                    current_header = row[0]
+                else:
+                    try:
+                        rgb = list(row)
+                        color_data.append(rgb)
+                    except ValueError:
+                        continue
+
+            if current_header is not None:
+                self.CMAP[current_header] = color_data
+
+        return self.CMAP
+    
+    # type:
+    # 'div' (divergence)
+    # 'seq' (sequential)
+    # var: 
+    # 'prec' (precipitation)
+    # 'temp' (temperature)
+    # 'wind' (wind speed)
+    # 'cryo' (cryosphere)
+    # 'chem' (CO2/CH4/aerosals)
+    # 'slev' (sea level)
+    # 'misc' (miscellaneous) (e.g., misc_seq_{1,2,3}_levels)
+    # levels:
+    # 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
+    def get_ipcc_cmap(self, type_ = 'div', var_ = 'prec', levels = 10, reverse = False):
+
+        key_ = f"{var_}_{type_}_{levels}"
+        rgb = self.CMAP[key_]
+
+        if reverse:
+            rgb = rgb[::-1]
+
+        rgb_normalized = np.array(rgb) / 255.0
+        custom_colormap = LinearSegmentedColormap.from_list("Custom_Colormap", rgb_normalized)
+        
+        return custom_colormap
+
+if __name__  == '__main__':
+    tmp = ipcc_cmap()
+    tmp.read_rgb_data_from_excel()
+    cmap = tmp.get_ipcc_cmap(type_ = 'div', var_ = 'prec', levels = 10, reverse = False)
