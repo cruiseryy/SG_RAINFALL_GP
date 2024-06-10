@@ -24,6 +24,7 @@ def kge(true_, fit):
     beta = np.mean(fit) / np.mean(true_)
     return 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
 
+# the Nash-Sutcliffe Efficiency (NSE) score
 def nse(true_, fit):
     return 1 - np.sum((true_ - fit) ** 2) / np.sum((true_ - np.mean(true_)) ** 2)
 
@@ -62,15 +63,15 @@ class sg_map_plotter:
         return
     
     def plot_scatter(self, ax, loc, size = 25, facecolor = 'k', marker_type = 'D'):
-        ax.scatter(loc[:,0], loc[:,1], s = size, facecolors = facecolor, marker = marker_type)
+        ax.scatter(loc[:,0], loc[:,1], s = size, facecolors = facecolor, marker = marker_type, edgecolor = 'none')
         return 
 
 class gp_interpolator:
     def __init__(self, P, e0 = 30, thres = 1e-3) -> None:
         # # of stations 
         self.p_ = P
-        # see Peng & Albertson 2021 but a vector of initial noise level is used here
-        self.sn = e0 * np.ones(self.p_) # initial noise level
+        # see Peng & Albertson 2021 but a vector of initial local noise levels is used here
+        self.sn = e0 * np.ones(self.p_) # initial local noises
         self.sn_thres = thres # a user-specified threshold for the noise level convergence
         self.iter = 0 # iteration counter
         return
@@ -117,4 +118,5 @@ class gp_interpolator:
         post_mu_y, post_kyy = gp_infer(xx_obs = self.rain_obs, mu_x = self.mu_x, kyx = kyx, 
                                        kxx = self.kxx + np.diag(self.sn**2), mu_y = mu_y, kyy = kyy)
         return post_mu_y, post_kyy
+    
 
