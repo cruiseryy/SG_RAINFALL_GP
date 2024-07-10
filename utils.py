@@ -31,9 +31,9 @@ def nse(true_, fit):
 # given prior info: mu_x, mu_y, kxx, kyy, kxy (derived from simulated rainfall)
 # conditioned on some observation of x: xx_obs
 # update the posterior distribution of y: mu_y, cov_y
-def gp_infer(xx_obs, mu_x, kyx, kxx, mu_y, kyy):
-    mu_y = mu_y + kyx @ np.linalg.inv(kxx) @ (xx_obs - mu_x).T
-    kyy = kyy - kyx @ np.linalg.inv(kxx) @ kyx.T
+def gp_infer(xx_obs, mu_x, kyx, kxx, mu_y, kyy, sn):
+    mu_y = mu_y + kyx @ np.linalg.inv(kxx + np.diag(sn**2)) @ (xx_obs - mu_x).T
+    kyy = kyy - kyx @ np.linalg.inv(kxx + np.diag(sn**2)) @ kyx.T 
     return mu_y.squeeze(), kyy
 
 class sg_map_plotter:
@@ -70,7 +70,7 @@ class gp_interpolator:
     def __init__(self, P, e0 = 30, thres = 1e-3) -> None:
         # # of stations 
         self.p_ = P
-        # see Peng & Albertson 2021 but a vector of initial local noise levels is used here
+        # # see Peng & Albertson 2021 but a vector of initial local noise levels is used here
         self.sn = e0 * np.ones(self.p_) # initial local noises
         self.sn_thres = thres # a user-specified threshold for the noise level convergence
         self.iter = 0 # iteration counter
@@ -105,8 +105,8 @@ class gp_interpolator:
                 tmu_y = np.mean(xx[:,j][:, None], axis = 0)
                 tkyy = np.cov(xx[:,j], ddof = 1)
                 txx_obs = np.delete(xx_obs, obj = j, axis = 1)
-                fit_y, _ = gp_infer(xx_obs = txx_obs, mu_x = tmu_x, kyx = tkyx, kxx = tkxx + np.diag(tsn**2),
-                                    mu_y = tmu_y, kyy = tkyy)
+                fit_y, _ = gp_infer(xx_obs = txx_obs, mu_x = tmu_x, kyx = tkyx, kxx = tkxx,
+                                    mu_y = tmu_y, kyy = tkyy, sn = tsn)
                 tmp_err.append(np.sqrt(np.mean((xx_obs[:, j] - fit_y) ** 2)))
             self.sn = np.array(tmp_err)
         return
@@ -116,7 +116,7 @@ class gp_interpolator:
         mu_y = np.mean(yy[None, :], axis = 1).T
         kyx = np.cov(yy.T, self.wrf_sta.T, ddof = 1)[:yy.shape[1], yy.shape[1]:]
         post_mu_y, post_kyy = gp_infer(xx_obs = self.rain_obs, mu_x = self.mu_x, kyx = kyx, 
-                                       kxx = self.kxx + np.diag(self.sn**2), mu_y = mu_y, kyy = kyy)
+                                       kxx = self.kxx, mu_y = mu_y, kyy = kyy, sn = self.sn)
         return post_mu_y, post_kyy
     
 
